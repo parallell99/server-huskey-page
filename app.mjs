@@ -14,7 +14,7 @@ app.use(
     origin: [
       "http://localhost:5173", // Frontend local (Vite)
       "http://localhost:3000", // Frontend local (React แบบอื่น)
-      "https://your-frontend.vercel.app", // Frontend ที่ Deploy แล้ว
+      "https://husky-page.vercel.app", // Frontend ที่ Deploy แล้ว
       // ✅ ให้เปลี่ยน https://your-frontend.vercel.app เป็น URL จริงของ Frontend ที่ deploy แล้ว
     ],
   })
