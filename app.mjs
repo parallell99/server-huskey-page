@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import pool from "./utils/db.mjs";
+import postRouter from "./apps/postRouter.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -24,78 +25,11 @@ app.get("/health", (req, res) => {
   res.status(200).json({ message: "OK" });
 });
 
-// routes อื่นๆ
-// app.post("/assignments", ...)
-
-app.get("/post", async (req,res) =>{
-  const query = `SELECT * FROM posts`
-  try {
-    const result = await pool.query(query)
-    res.status(200).json(result.rows)
-  } catch (error) {
-    res.status(500).json({ message: error.message })
-  }
-})
+app.use(postRouter);
 
 
-app.post("/post", async (req,res) =>{
-  const { title,image,description,content,category_id,status_id} = req.body
-  const query = `INSERT INTO posts (title,image,description,content,category_id,status_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`
-  const values = [title,image,description,content,category_id,status_id]
-  try {
-    const result = await pool.query(query,values)
-    res.status(201).json(result.rows[0])
-  } catch (error) {
-    res.status(500).json({ message: error.message })
-  }
-})
 
-app.get("/post/:id", async (req,res) =>{
-  const { id } = req.params
-  const query = `SELECT * FROM posts WHERE id = $1`
-  const values = [id]
-  try {
-    const result = await pool.query(query,values)
-    if (result.rows.length === 0) {
-      res.status(404).json({ message: "Server could not find a requested post" });
-    } else {
-      res.status(200).json(result.rows[0]);
-    }
-  }
-  catch (error) {
-    res.status(500).json({ message: "Server could not read post because database connection" })
-  }
-})
 
-app.put("/post/:id", async (req,res) =>{
-  const { id } = req.params
-  const { title,image,description,content,category_id,status_id} = req.body
-  const query = `UPDATE posts SET title = $1, image = $2, description = $3, content = $4, category_id = $5, status_id = $6 WHERE id = $7 RETURNING *`
-  const values = [title,image,description,content,category_id,status_id,id]
-  try {
-    const result = await pool.query(query,values)
-    res.status(200).json(result.rows[0])
-  }
-  catch (error) {
-    res.status(500).json({ message: error.message })
-  }
-})
-
-app.delete("/post/:id", async (req,res) =>{
-  const { id } = req.params
-  const query = `DELETE FROM posts WHERE id = $1 RETURNING *`
-  const values = [id]
-  try {
-    const result = await pool.query(query, values);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: "Server could not find a requested post to delete" });
-    }
-    res.status(200).json({ message: "Deleted post successfully"});
-  }
-  catch (error) {
-    res.status(500).json({ message: "Server could not delete post because database connection" })
-  }
-})
 
 
 
