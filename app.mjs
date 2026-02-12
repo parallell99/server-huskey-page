@@ -1,8 +1,10 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import pool from "./utils/db.mjs";
 import postRouter from "./apps/postRouter.js";
+import authRouter from "./routes/auth.js";
+import protectUser from "./middleware/protectUser.mjs";
+import protectAdmin from "./middleware/protectAdmin.mjs";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -27,8 +29,7 @@ app.get("/", (req, res) => {
     endpoints: {
       health: "/health",
       posts: "/posts",
-      register: "/register",
-      login: "/login"
+      auth: "/auth"
     }
   });
 });
@@ -37,7 +38,22 @@ app.get("/health", (req, res) => {
   res.status(200).json({ message: "OK" });
 });
 
-app.use("/posts",postRouter);
+// Auth routes
+app.use("/auth", authRouter);
+
+// Post routes
+app.use("/posts", postRouter);
+
+// ตัวอย่างการใช้งาน Middleware
+// Route ที่ต้องการ protectUser (ต้อง login)
+app.get("/protected-route", protectUser, (req, res) => {
+  res.json({ message: "This is protected content", user: req.user });
+});
+
+// Route ที่ต้องการ protectAdmin (ต้องเป็น admin)
+app.get("/admin-only", protectAdmin, (req, res) => {
+  res.json({ message: "This is admin-only content", admin: req.user });
+});
 
 
 
@@ -45,31 +61,6 @@ app.use("/posts",postRouter);
 
 
 
-app.post("/register", async (req,res) =>{
-  const { name,username,email,password} = req.body
-  const query = `INSERT INTO users (name,username,email,password) VALUES ($1,$2,$3,$4) RETURNING *`
-  const values = [name,username,email,password]
-  try {
-    const result = await pool.query(query,values)
-    res.status(201).json(result.rows[0])
-  }
-  catch (error) {
-    res.status(500).json({ message: error.message })
-  }
-})
-
-app.post("/login", async (req,res) =>{
-  const { email,password} = req.body
-  const query = `SELECT * FROM users WHERE email = $1 AND password = $2`
-  const values = [email,password]
-  try {
-    const result = await pool.query(query,values)
-    res.status(200).json(result.rows[0])
-  }
-  catch (error) {
-    res.status(500).json({ message: error.message })
-  }
-})
 
 
 
