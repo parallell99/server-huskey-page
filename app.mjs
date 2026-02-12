@@ -8,7 +8,6 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(express.json());
-
 // ✅ ใส่ CORS ตรงนี้ (หลังสร้าง app และก่อน routes)
 app.use(
   cors({
@@ -25,7 +24,7 @@ app.get("/health", (req, res) => {
   res.status(200).json({ message: "OK" });
 });
 
-app.use(postRouter);
+app.use("/posts",postRouter);
 
 
 

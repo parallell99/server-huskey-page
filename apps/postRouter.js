@@ -1,10 +1,11 @@
 import express from "express";
 
 import pool from "../utils/db.mjs";
+import postValidation from "../middleware/postValidation.mjs";
 
 const postRouter = express.Router();    
 
-postRouter.get("/posts", async (req, res) => {
+postRouter.get("/", async (req, res) => {
     // Get page and limit from query params, use defaults if not provided
     let { page, limit } = req.query;
     page = parseInt(page) || 1;
@@ -41,7 +42,7 @@ postRouter.get("/posts", async (req, res) => {
   });
   
   
-  postRouter.post("/post", async (req,res) =>{
+  postRouter.post("/", postValidation, async (req,res) =>{
     const { title,image,description,content,category_id,status_id} = req.body
     const query = `INSERT INTO posts (title,image,description,content,category_id,status_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`
     const values = [title,image,description,content,category_id,status_id]
@@ -53,7 +54,7 @@ postRouter.get("/posts", async (req, res) => {
     }
   })
   
-  postRouter.get("/post/:id", async (req,res) =>{
+  postRouter.get("/:id", async (req,res) =>{
     const { id } = req.params
     const query = `SELECT * FROM posts WHERE id = $1`
     const values = [id]
@@ -70,7 +71,7 @@ postRouter.get("/posts", async (req, res) => {
     }
   })
   
-  postRouter.put("/post/:id", async (req,res) =>{
+  postRouter.put("/:id", postValidation, async (req,res) =>{
     const { id } = req.params
     const { title,image,description,content,category_id,status_id} = req.body
     const query = `UPDATE posts SET title = $1, image = $2, description = $3, content = $4, category_id = $5, status_id = $6 WHERE id = $7 RETURNING *`
@@ -84,7 +85,7 @@ postRouter.get("/posts", async (req, res) => {
     }
   })
   
-  postRouter.delete("/post/:id", async (req,res) =>{
+  postRouter.delete("/:id", async (req,res) =>{
     const { id } = req.params
     const query = `DELETE FROM posts WHERE id = $1 RETURNING *`
     const values = [id]
