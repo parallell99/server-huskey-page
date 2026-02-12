@@ -20,6 +20,19 @@ app.use(
   })
 );
 
+app.get("/", (req, res) => {
+  res.status(200).json({ 
+    message: "Personal Blog API",
+    version: "1.0.0",
+    endpoints: {
+      health: "/health",
+      posts: "/posts",
+      register: "/register",
+      login: "/login"
+    }
+  });
+});
+
 app.get("/health", (req, res) => {
   res.status(200).json({ message: "OK" });
 });
@@ -69,6 +82,15 @@ app.post("/login", async (req,res) =>{
 //   }
 //   catch (error) {
 //     res.status(500).json({ message: error.message })
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+//   }
+// })
+
+// For Vercel serverless functions
+export default app;
+
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
