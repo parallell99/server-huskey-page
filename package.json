@@ -1,0 +1,17 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "Server for the Husky Page",
+  "main": "app.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "nodemon app.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
+    "express": "^5.2.1",
+    "nodemon": "^3.1.11",
+    "pg": "^8.18.0"
+  }
+}
