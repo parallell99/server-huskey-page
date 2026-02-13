@@ -1,5 +1,5 @@
-import * as pg from "pg"
-const { Pool } = pg.defaults;
+import pg from "pg";
+const { Pool } = pg;
 
 // สร้าง connection pool สำหรับ PostgreSQL Supabase
 const connectionPool = new Pool({

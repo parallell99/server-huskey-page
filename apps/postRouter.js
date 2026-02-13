@@ -3,8 +3,16 @@ import connectionPool from "../utils/db.mjs";
 import postValidation from "../middleware/postValidation.mjs";
 import protectUser from "../middleware/protectUser.mjs";
 import protectAdmin from "../middleware/protectAdmin.mjs";
+import multer from "multer";
+import supabase from "../config/supabase.mjs";
 
-const postRouter = express.Router();    
+const postRouter = express.Router();
+
+// ตั้งค่า Multer สำหรับการอัปโหลดไฟล์
+const multerUpload = multer({ storage: multer.memoryStorage() });
+const imageFileUpload = multerUpload.fields([
+  { name: "imageFile", maxCount: 1 },
+]);    
 
 // GET /posts - ดูได้ทุกคน (ไม่ต้อง login)
 postRouter.get("/", async (req, res) => {
@@ -43,22 +51,50 @@ postRouter.get("/", async (req, res) => {
     }
   });
   
-// POST /posts - สร้าง post ต้อง login (protectUser)
-postRouter.post("/", protectUser, postValidation, async (req,res) =>{
-    const { title,image,description,content,category_id,status_id} = req.body
-    const query = `INSERT INTO posts (title,image,description,content,category_id,status_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`
-    const values = [title,image,description,content,category_id,status_id]
-    try {
-      const result = await connectionPool.query(query,values)
-      res.status(201).json(result.rows[0])
-    } catch (error) {
-      res.status(500).json({ message: error.message })
+// POST /posts - สร้าง post (อัปโหลดรูปไป Supabase Storage, ต้องเป็น admin)
+postRouter.post("/", [imageFileUpload, protectAdmin], async (req, res) => {
+  try {
+    const newPost = req.body;
+    const file = req.files?.imageFile?.[0];
+    if (!file) {
+      return res.status(400).json({ message: "กรุณาอัปโหลดรูปภาพ (imageFile)" });
     }
-  })
+    const bucketName = "my-personal-blog";
+    const filePath = `posts/${Date.now()}_${file.originalname}`;
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .upload(filePath, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false,
+      });
+    if (error) throw error;
+    const { data: { publicUrl } } = supabase.storage
+      .from(bucketName)
+      .getPublicUrl(data.path);
+    const query = `INSERT INTO posts (title, image, category_id, description, content, status_id)
+      VALUES ($1, $2, $3, $4, $5, $6)`;
+    const values = [
+      newPost.title,
+      publicUrl,
+      parseInt(newPost.category_id, 10),
+      newPost.description,
+      newPost.content,
+      parseInt(newPost.status_id, 10),
+    ];
+    await connectionPool.query(query, values);
+    return res.status(201).json({ message: "Created post successfully" });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      message: "Server could not create post",
+      error: err.message,
+    });
+  }
+});
   
 // GET /posts/:id - ดูได้ทุกคน (ไม่ต้อง login)
-postRouter.get("/:id", async (req,res) =>{
-    const { id } = req.params
+postRouter.get("/:id", async (req, res) => {
+    const { id } = req.params;
     const query = `SELECT * FROM posts WHERE id = $1`
     const values = [id]
     try {
@@ -75,8 +111,8 @@ postRouter.get("/:id", async (req,res) =>{
   })
   
 // PUT /posts/:id - แก้ไข post ต้อง login (protectUser)
-postRouter.put("/:id", protectUser, postValidation, async (req,res) =>{
-    const { id } = req.params
+postRouter.put("/:id", protectUser, postValidation, async (req, res) => {
+    const { id } = req.params;
     const { title,image,description,content,category_id,status_id} = req.body
     const query = `UPDATE posts SET title = $1, image = $2, description = $3, content = $4, category_id = $5, status_id = $6 WHERE id = $7 RETURNING *`
     const values = [title,image,description,content,category_id,status_id,id]

@@ -10,11 +10,15 @@ class AuthService {
     return rows.length > 0;
   }
 
-  // สร้าง user ใน Supabase Auth
-  async signUp(email, password) {
+  // สร้าง user ใน Supabase Auth (เชื่อมต่อ Supabase โดยตรง)
+  async signUp(email, password, options = {}) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: options.data || {},
+        emailRedirectTo: options.emailRedirectTo,
+      },
     });
     return { data, error };
   }
