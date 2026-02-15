@@ -18,6 +18,11 @@ const supabaseStorage = useServiceRole
   ? createClient(process.env.SUPABASE_URL, serviceKey)
   : supabase;
 
+// Admin client สำหรับ auth (เช่น อัปเดตรหัสผ่าน) ใช้เฉพาะ server-side
+export const supabaseAdmin = useServiceRole
+  ? createClient(process.env.SUPABASE_URL, serviceKey, { auth: { persistSession: false } })
+  : null;
+
 export const isUsingServiceRoleForStorage = !!useServiceRole;
 
 if (!useServiceRole) {

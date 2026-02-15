@@ -133,10 +133,9 @@ class AuthController {
     }
   }
 
-  // Reset password
+  // Reset password (ใช้ Admin API หลังตรวจรหัสผ่านเดิมแล้ว)
   async resetPassword(req, res) {
     try {
-      const token = req.headers.authorization?.split(" ")[1];
       const body = req.body || {};
       const oldPassword = body.oldPassword != null ? String(body.oldPassword) : "";
       const newPassword = body.newPassword != null ? String(body.newPassword) : "";
@@ -148,18 +147,21 @@ class AuthController {
         return res.status(400).json({ error: "New password must be at least 6 characters" });
       }
 
-      if (oldPassword && oldPassword.trim()) {
-        const email = req.user?.email;
-        if (!email) {
-          return res.status(400).json({ error: "Unable to verify current password. Please log in again." });
-        }
-        const { isValid } = await authService.verifyOldPassword(email, oldPassword.trim());
-        if (!isValid) {
-          return res.status(400).json({ error: "Invalid old password" });
-        }
+      const userId = req.user?.id;
+      const email = req.user?.email;
+      if (!userId || !email) {
+        return res.status(401).json({ error: "Unable to identify user. Please log in again." });
       }
 
-      const { error } = await authService.updatePassword(token, newPassword.trim());
+      if (!oldPassword || !oldPassword.trim()) {
+        return res.status(400).json({ error: "Current password is required" });
+      }
+      const { isValid } = await authService.verifyOldPassword(email, oldPassword.trim());
+      if (!isValid) {
+        return res.status(400).json({ error: "Invalid old password" });
+      }
+
+      const { error } = await authService.updatePasswordByUserId(userId, newPassword.trim());
       if (error) {
         return res.status(400).json({ error: error.message || "Failed to update password" });
       }

@@ -1,4 +1,4 @@
-import supabase, { createSupabaseClient } from "../config/supabase.mjs";
+import supabase, { createSupabaseClient, supabaseAdmin } from "../config/supabase.mjs";
 import connectionPool from "../utils/db.mjs";
 
 class AuthService {
@@ -67,10 +67,17 @@ class AuthService {
     return { isValid: !error, error };
   }
 
-  // อัปเดตรหัสผ่าน
-  async updatePassword(token, newPassword) {
-    const supabaseWithToken = createSupabaseClient(token);
-    const { error } = await supabaseWithToken.auth.updateUser({
+  // อัปเดตรหัสผ่าน (ใช้ Admin API เพื่อหลีกเลี่ยง "Auth session missing!")
+  async updatePasswordByUserId(userId, newPassword) {
+    if (!supabaseAdmin?.auth?.admin) {
+      return {
+        error: {
+          message:
+            "Server auth admin not configured. Set SUPABASE_SERVICE_ROLE_KEY in .env and restart.",
+        },
+      };
+    }
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
       password: newPassword,
     });
     return { error };
