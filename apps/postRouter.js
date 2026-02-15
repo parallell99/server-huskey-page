@@ -29,12 +29,32 @@ postRouter.get("/", async (req, res) => {
       const totalPosts = parseInt(countResult.rows[0].count, 10);
       const totalPages = Math.ceil(totalPosts / limit);
 
-      // Fetch posts for current page
-      const postsResult = await connectionPool.query(
-        `SELECT * FROM posts ORDER BY id DESC LIMIT $1 OFFSET $2`,
-        [limit, offset]
-      );
-      const posts = postsResult.rows;
+      // Fetch posts; ถ้ามีคอลัมน์ user_id จะ join เอา author_name มาด้วย
+      let posts;
+      try {
+        const postsResult = await connectionPool.query(
+          `SELECT p.*, COALESCE(u.name, u.username) AS author_name, c.name AS category_name
+           FROM posts p
+           LEFT JOIN users u ON p.user_id = u.id
+           LEFT JOIN categories c ON p.category_id = c.id
+           ORDER BY p.id DESC LIMIT $1 OFFSET $2`,
+          [limit, offset]
+        );
+        posts = postsResult.rows;
+      } catch (joinErr) {
+        // ตาราง posts ยังไม่มี user_id (ยังไม่รัน migration) → ใช้ SELECT + join categories
+        if (joinErr.code === "42703" || /user_id|column/.test(joinErr.message || "")) {
+          const simpleResult = await connectionPool.query(
+            `SELECT p.*, c.name AS category_name FROM posts p
+             LEFT JOIN categories c ON p.category_id = c.id
+             ORDER BY p.id DESC LIMIT $1 OFFSET $2`,
+            [limit, offset]
+          );
+          posts = simpleResult.rows.map((row) => ({ ...row, author_name: null }));
+        } else {
+          throw joinErr;
+        }
+      }
 
       // Calculate nextPage
       const nextPage = page < totalPages ? page + 1 : null;
@@ -72,8 +92,8 @@ postRouter.post("/", [imageFileUpload, protectAdmin], async (req, res) => {
     const { data: { publicUrl } } = supabaseStorage.storage
       .from(bucketName)
       .getPublicUrl(data.path);
-    const query = `INSERT INTO posts (title, image, category_id, description, content, status_id)
-      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, title`;
+    const query = `INSERT INTO posts (title, image, category_id, description, content, status_id, user_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, title`;
     const values = [
       newPost.title,
       publicUrl,
@@ -81,6 +101,7 @@ postRouter.post("/", [imageFileUpload, protectAdmin], async (req, res) => {
       newPost.description,
       newPost.content,
       parseInt(newPost.status_id, 10),
+      req.user?.id || null,
     ];
     const insertResult = await connectionPool.query(query, values);
     const newPostRow = insertResult.rows[0];
@@ -105,6 +126,61 @@ postRouter.post("/", [imageFileUpload, protectAdmin], async (req, res) => {
     });
   }
 });
+
+// POST /posts/simple - สร้าง post (เฉพาะข้อมูล ไม่มี image, ต้องเป็น admin)
+postRouter.post("/simple", protectAdmin, postValidation, async (req, res) => {
+  try {
+    const { title, category_id, description, content, status_id } = req.body;
+    if (
+      !title ||
+      !category_id ||
+      !description ||
+      !content ||
+      !status_id
+    ) {
+      return res.status(400).json({ message: "ต้องกรอกข้อมูลให้ครบทุกช่อง" });
+    }
+
+    const query = `
+      INSERT INTO posts (title, category_id, description, content, status_id, user_id)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id, title
+    `;
+    const values = [
+      title,
+      parseInt(category_id, 10),
+      description,
+      content,
+      parseInt(status_id, 10),
+      req.user?.id || null,
+    ];
+
+    const result = await connectionPool.query(query, values);
+    const newPost = result.rows[0];
+    const newPostId = newPost?.id;
+    const createdTitle = newPost?.title || title || "บทความใหม่";
+
+    if (newPostId) {
+      try {
+        await connectionPool.query(
+          `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
+          ["new_article", `มีบทความใหม่: ${createdTitle}`, newPostId]
+        );
+      } catch (notifErr) {
+        console.error("Failed to create new_article notification:", notifErr);
+      }
+    }
+
+    return res.status(201).json({ message: "Created post successfully", id: newPostId });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      message: "Server could not create post",
+      error: err.message,
+    });
+  }
+});
+
   
 // GET /posts/:id/comments - ดึง comments ของ post (ไม่ต้อง login)
 postRouter.get("/:id/comments", async (req, res) => {
@@ -378,6 +454,17 @@ postRouter.post("/:id/like", protectUser, async (req, res) => {
       // Like - เพิ่ม like
       const insertQuery = `INSERT INTO likes (post_id, user_id) VALUES ($1, $2) RETURNING *`;
       await connectionPool.query(insertQuery, [postId, userId]);
+      try {
+        const postRow = await connectionPool.query(`SELECT title FROM posts WHERE id = $1`, [postId]);
+        const postTitle = postRow.rows[0]?.title || "บทความ";
+        const likeText = `มีคนกด like บทความ '${postTitle}'`;
+        await connectionPool.query(
+          `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
+          ["like", likeText, postId]
+        );
+      } catch (notifErr) {
+        console.error("Failed to create like notification:", notifErr);
+      }
       res.status(201).json({ message: "Liked successfully", liked: true });
     }
   } catch (error) {
@@ -389,20 +476,42 @@ postRouter.post("/:id/like", protectUser, async (req, res) => {
 // GET /posts/:id - ดูได้ทุกคน (ไม่ต้อง login)
 postRouter.get("/:id", async (req, res) => {
     const { id } = req.params;
-    const query = `SELECT * FROM posts WHERE id = $1`
-    const values = [id]
+    const values = [id];
     try {
-      const result = await connectionPool.query(query,values)
-      if (result.rows.length === 0) {
+      let row;
+      try {
+        const result = await connectionPool.query(
+          `SELECT p.*, COALESCE(u.name, u.username) AS author_name, c.name AS category_name
+           FROM posts p
+           LEFT JOIN users u ON p.user_id = u.id
+           LEFT JOIN categories c ON p.category_id = c.id
+           WHERE p.id = $1`,
+          values
+        );
+        row = result.rows[0];
+      } catch (joinErr) {
+        if (joinErr.code === "42703" || /user_id|column/.test(joinErr.message || "")) {
+          const simpleResult = await connectionPool.query(
+            `SELECT p.*, c.name AS category_name FROM posts p
+             LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = $1`,
+            values
+          );
+          row = simpleResult.rows[0]
+            ? { ...simpleResult.rows[0], author_name: null }
+            : null;
+        } else {
+          throw joinErr;
+        }
+      }
+      if (!row) {
         res.status(404).json({ message: "Server could not find a requested post" });
       } else {
-        res.status(200).json(result.rows[0]);
+        res.status(200).json(row);
       }
+    } catch (error) {
+      res.status(500).json({ message: "Server could not read post because database connection" });
     }
-    catch (error) {
-      res.status(500).json({ message: "Server could not read post because database connection" })
-    }
-  })
+  });
   
 // PUT /posts/:id - แก้ไข post ต้อง login (protectUser)
 postRouter.put("/:id", protectUser, postValidation, async (req, res) => {

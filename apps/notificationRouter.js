@@ -8,7 +8,7 @@ const ensureNotificationsTable = async () => {
   await connectionPool.query(`
     CREATE TABLE IF NOT EXISTS notifications (
       id SERIAL PRIMARY KEY,
-      type TEXT NOT NULL CHECK (type IN ('new_article', 'comment')),
+      type TEXT NOT NULL CHECK (type IN ('new_article', 'comment', 'like')),
       text TEXT NOT NULL,
       post_id INTEGER REFERENCES posts(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()

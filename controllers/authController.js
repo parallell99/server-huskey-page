@@ -136,33 +136,37 @@ class AuthController {
   // Reset password
   async resetPassword(req, res) {
     try {
-      // req.user ถูก set โดย protectUser middleware แล้ว
       const token = req.headers.authorization?.split(" ")[1];
-      const { oldPassword, newPassword } = req.body;
+      const body = req.body || {};
+      const oldPassword = body.oldPassword != null ? String(body.oldPassword) : "";
+      const newPassword = body.newPassword != null ? String(body.newPassword) : "";
 
-      if (!newPassword) {
+      if (!newPassword || !newPassword.trim()) {
         return res.status(400).json({ error: "New password is required" });
       }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "New password must be at least 6 characters" });
+      }
 
-      // ตรวจสอบรหัสผ่านเดิม (ถ้ามี)
-      if (oldPassword) {
-        const { isValid } = await authService.verifyOldPassword(
-          req.user.email,
-          oldPassword
-        );
+      if (oldPassword && oldPassword.trim()) {
+        const email = req.user?.email;
+        if (!email) {
+          return res.status(400).json({ error: "Unable to verify current password. Please log in again." });
+        }
+        const { isValid } = await authService.verifyOldPassword(email, oldPassword.trim());
         if (!isValid) {
           return res.status(400).json({ error: "Invalid old password" });
         }
       }
 
-      // อัปเดตรหัสผ่าน
-      const { error } = await authService.updatePassword(token, newPassword);
+      const { error } = await authService.updatePassword(token, newPassword.trim());
       if (error) {
-        return res.status(400).json({ error: error.message });
+        return res.status(400).json({ error: error.message || "Failed to update password" });
       }
 
       res.status(200).json({ message: "Password updated successfully" });
     } catch (error) {
+      console.error("resetPassword error:", error?.message);
       res.status(500).json({ error: "Internal server error" });
     }
   }
