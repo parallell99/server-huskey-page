@@ -6,6 +6,7 @@ import authRouter from "./routes/auth.js";
 import protectUser from "./middleware/protectUser.mjs";
 import protectAdmin from "./middleware/protectAdmin.mjs";
 import userRouter from "./apps/userRouter.js";
+import notificationRouter from "./apps/notificationRouter.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -46,6 +47,7 @@ app.use("/auth", authRouter);
 app.use("/posts", postRouter);
 
 app.use("/users", userRouter);
+app.use("/notifications", notificationRouter);
 
 // ตัวอย่างการใช้งาน Middleware
 // Route ที่ต้องการ protectUser (ต้อง login)

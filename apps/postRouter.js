@@ -73,7 +73,7 @@ postRouter.post("/", [imageFileUpload, protectAdmin], async (req, res) => {
       .from(bucketName)
       .getPublicUrl(data.path);
     const query = `INSERT INTO posts (title, image, category_id, description, content, status_id)
-      VALUES ($1, $2, $3, $4, $5, $6)`;
+      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, title`;
     const values = [
       newPost.title,
       publicUrl,
@@ -82,7 +82,20 @@ postRouter.post("/", [imageFileUpload, protectAdmin], async (req, res) => {
       newPost.content,
       parseInt(newPost.status_id, 10),
     ];
-    await connectionPool.query(query, values);
+    const insertResult = await connectionPool.query(query, values);
+    const newPostRow = insertResult.rows[0];
+    const newPostId = newPostRow?.id;
+    const title = newPostRow?.title || newPost.title || "บทความใหม่";
+    if (newPostId) {
+      try {
+        await connectionPool.query(
+          `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
+          ["new_article", `มีบทความใหม่: ${title}`, newPostId]
+        );
+      } catch (notifErr) {
+        console.error("Failed to create new_article notification:", notifErr);
+      }
+    }
     return res.status(201).json({ message: "Created post successfully" });
   } catch (err) {
     console.error(err);
@@ -194,11 +207,12 @@ postRouter.post("/:id/comments", protectUser, async (req, res) => {
       return res.status(400).json({ message: "Invalid post ID" });
     }
     
-    const postCheckQuery = `SELECT id FROM posts WHERE id = $1`;
+    const postCheckQuery = `SELECT id, title FROM posts WHERE id = $1`;
     const postCheckResult = await connectionPool.query(postCheckQuery, [postId]);
     if (postCheckResult.rows.length === 0) {
       return res.status(404).json({ message: "Post not found" });
     }
+    const postTitle = postCheckResult.rows[0]?.title || "บทความ";
 
     // ตรวจสอบ column name ที่มีอยู่จริง
     const columnCheckQuery = `
@@ -245,6 +259,16 @@ postRouter.post("/:id/comments", protectUser, async (req, res) => {
     console.log("Inserting comment into column:", contentColumn);
     const result = await connectionPool.query(query, [postId, userId, content.trim()]);
     console.log("Comment created:", result.rows[0]);
+
+    try {
+      const commentNotifText = `มีคนคอมเม้นในบทความ '${postTitle || "บทความ"}'`;
+      await connectionPool.query(
+        `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
+        ["comment", commentNotifText, postId]
+      );
+    } catch (notifErr) {
+      console.error("Failed to create comment notification:", notifErr);
+    }
     
     // ดึงข้อมูล user เพื่อส่งกลับ
     const userQuery = `SELECT name, username, profile_pic FROM users WHERE id = $1`;
