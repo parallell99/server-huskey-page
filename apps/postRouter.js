@@ -5,7 +5,7 @@ import protectUser from "../middleware/protectUser.mjs";
 import protectAdmin from "../middleware/protectAdmin.mjs";
 import optionalAuth from "../middleware/optionalAuth.mjs";
 import multer from "multer";
-import supabase from "../config/supabase.mjs";
+import { supabaseStorage } from "../config/supabase.mjs";
 
 const postRouter = express.Router();
 
@@ -62,14 +62,14 @@ postRouter.post("/", [imageFileUpload, protectAdmin], async (req, res) => {
     }
     const bucketName = "my-personal-blog";
     const filePath = `posts/${Date.now()}_${file.originalname}`;
-    const { data, error } = await supabase.storage
+    const { data, error } = await supabaseStorage.storage
       .from(bucketName)
       .upload(filePath, file.buffer, {
         contentType: file.mimetype,
         upsert: false,
       });
     if (error) throw error;
-    const { data: { publicUrl } } = supabase.storage
+    const { data: { publicUrl } } = supabaseStorage.storage
       .from(bucketName)
       .getPublicUrl(data.path);
     const query = `INSERT INTO posts (title, image, category_id, description, content, status_id)

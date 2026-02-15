@@ -75,6 +75,45 @@ class AuthService {
     });
     return { error };
   }
+
+  // อัปเดตข้อมูล user ใน database (name, username, profile_pic)
+  async updateUser(userId, updates) {
+    const fields = [];
+    const values = [];
+    let paramIndex = 1;
+
+    if (updates.name !== undefined) {
+      fields.push(`name = $${paramIndex++}`);
+      values.push(updates.name);
+    }
+    if (updates.username !== undefined) {
+      fields.push(`username = $${paramIndex++}`);
+      values.push(updates.username);
+    }
+    if (updates.profilePic !== undefined) {
+      fields.push(`profile_pic = $${paramIndex++}`);
+      values.push(updates.profilePic);
+    }
+
+    if (fields.length === 0) {
+      return null;
+    }
+
+    values.push(userId);
+    const query = `
+      UPDATE users
+      SET ${fields.join(", ")}
+      WHERE id = $${paramIndex}
+      RETURNING *;
+    `;
+    try {
+      const { rows } = await connectionPool.query(query, values);
+      return rows[0];
+    } catch (err) {
+      console.error("authService.updateUser DB error:", err.message, "code:", err.code);
+      throw err;
+    }
+  }
 }
 
 export default new AuthService();
