@@ -33,7 +33,7 @@ postRouter.get("/", async (req, res) => {
       let posts;
       try {
         const postsResult = await connectionPool.query(
-          `SELECT p.*, COALESCE(u.name, u.username) AS author_name, c.name AS category_name
+          `SELECT p.*, COALESCE(u.name, u.username) AS author_name, u.profile_pic AS author_profile_pic, c.name AS category_name
            FROM posts p
            LEFT JOIN users u ON p.user_id = u.id
            LEFT JOIN categories c ON p.category_id = c.id
@@ -50,7 +50,7 @@ postRouter.get("/", async (req, res) => {
              ORDER BY p.id DESC LIMIT $1 OFFSET $2`,
             [limit, offset]
           );
-          posts = simpleResult.rows.map((row) => ({ ...row, author_name: null }));
+          posts = simpleResult.rows.map((row) => ({ ...row, author_name: null, author_profile_pic: null }));
         } else {
           throw joinErr;
         }
@@ -481,7 +481,7 @@ postRouter.get("/:id", async (req, res) => {
       let row;
       try {
         const result = await connectionPool.query(
-          `SELECT p.*, COALESCE(u.name, u.username) AS author_name, c.name AS category_name
+          `SELECT p.*, COALESCE(u.name, u.username) AS author_name, u.profile_pic AS author_profile_pic, c.name AS category_name
            FROM posts p
            LEFT JOIN users u ON p.user_id = u.id
            LEFT JOIN categories c ON p.category_id = c.id
@@ -497,7 +497,7 @@ postRouter.get("/:id", async (req, res) => {
             values
           );
           row = simpleResult.rows[0]
-            ? { ...simpleResult.rows[0], author_name: null }
+            ? { ...simpleResult.rows[0], author_name: null, author_profile_pic: null }
             : null;
         } else {
           throw joinErr;
