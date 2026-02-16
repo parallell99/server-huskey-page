@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import serverless from "serverless-http";
 import postRouter from "./apps/postRouter.js";
 import authRouter from "./routes/auth.js";
 import protectUser from "./middleware/protectUser.mjs";
@@ -83,11 +84,11 @@ app.get("/admin-only", protectAdmin, (req, res) => {
 //   }
 // })
 
-// For Vercel serverless functions
-export default app;
+// For Vercel serverless: export handler (Vercel เรียก function นี้แทนการ listen)
+export default process.env.NODE_ENV === "production" ? serverless(app) : app;
 
 // For local development
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== "production") {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
