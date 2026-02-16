@@ -109,10 +109,31 @@ postRouter.post("/", [imageFileUpload, protectAdmin], async (req, res) => {
     const title = newPostRow?.title || newPost.title || "บทความใหม่";
     if (newPostId) {
       try {
-        await connectionPool.query(
-          `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
-          ["new_article", `มีบทความใหม่: ${title}`, newPostId]
-        );
+        let authorName = "Admin";
+        if (req.user?.id) {
+          const authorRow = await connectionPool.query(
+            `SELECT name, username FROM users WHERE id = $1`,
+            [req.user.id]
+          );
+          if (authorRow.rows[0]) {
+            const u = authorRow.rows[0];
+            authorName = (u.name && u.name.trim()) ? u.name.trim() : (u.username || "Admin");
+          }
+        }
+        const notifText = `${authorName}. Published new article.`;
+        try {
+          await connectionPool.query(
+            `INSERT INTO notifications (type, text, post_id, actor_user_id) VALUES ($1, $2, $3, $4)`,
+            ["new_article", notifText, newPostId, req.user.id]
+          );
+        } catch (e) {
+          if (e.code === "42703") {
+            await connectionPool.query(
+              `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
+              ["new_article", notifText, newPostId]
+            );
+          } else throw e;
+        }
       } catch (notifErr) {
         console.error("Failed to create new_article notification:", notifErr);
       }
@@ -162,10 +183,31 @@ postRouter.post("/simple", protectAdmin, postValidation, async (req, res) => {
 
     if (newPostId) {
       try {
-        await connectionPool.query(
-          `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
-          ["new_article", `มีบทความใหม่: ${createdTitle}`, newPostId]
-        );
+        let authorName = "Admin";
+        if (req.user?.id) {
+          const authorRow = await connectionPool.query(
+            `SELECT name, username FROM users WHERE id = $1`,
+            [req.user.id]
+          );
+          if (authorRow.rows[0]) {
+            const u = authorRow.rows[0];
+            authorName = (u.name && u.name.trim()) ? u.name.trim() : (u.username || "Admin");
+          }
+        }
+        const notifText = `${authorName}. Published new article.`;
+        try {
+          await connectionPool.query(
+            `INSERT INTO notifications (type, text, post_id, actor_user_id) VALUES ($1, $2, $3, $4)`,
+            ["new_article", notifText, newPostId, req.user.id]
+          );
+        } catch (e) {
+          if (e.code === "42703") {
+            await connectionPool.query(
+              `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
+              ["new_article", notifText, newPostId]
+            );
+          } else throw e;
+        }
       } catch (notifErr) {
         console.error("Failed to create new_article notification:", notifErr);
       }
@@ -336,20 +378,49 @@ postRouter.post("/:id/comments", protectUser, async (req, res) => {
     const result = await connectionPool.query(query, [postId, userId, content.trim()]);
     console.log("Comment created:", result.rows[0]);
 
-    try {
-      const commentNotifText = `มีคนคอมเม้นในบทความ '${postTitle || "บทความ"}'`;
-      await connectionPool.query(
-        `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
-        ["comment", commentNotifText, postId]
-      );
-    } catch (notifErr) {
-      console.error("Failed to create comment notification:", notifErr);
-    }
-    
-    // ดึงข้อมูล user เพื่อส่งกลับ
+    // ดึงข้อมูล user (commenter) เพื่อส่งกลับและใช้ใน notification
     const userQuery = `SELECT name, username, profile_pic FROM users WHERE id = $1`;
     const userResult = await connectionPool.query(userQuery, [userId]);
     const user = userResult.rows[0];
+    const commenterName = (user?.name && user.name.trim()) ? user.name.trim() : (user?.username || "Someone");
+
+    try {
+      const notifText = `${commenterName}. Comment on the article you have commented on.`;
+      const recipientsResult = await connectionPool.query(
+        `SELECT DISTINCT user_id FROM comments WHERE post_id = $1 AND user_id IS NOT NULL AND user_id != $2`,
+        [postId, userId]
+      );
+      const recipients = recipientsResult.rows.map((r) => r.user_id).filter(Boolean);
+      if (recipients.length > 0) {
+        for (const recipientId of recipients) {
+          try {
+            await connectionPool.query(
+              `INSERT INTO notifications (type, text, post_id, user_id, actor_user_id) VALUES ($1, $2, $3, $4, $5)`,
+              ["comment", notifText, postId, recipientId, userId]
+            );
+          } catch (insertErr) {
+            if (insertErr.code === "42703") {
+              try {
+                await connectionPool.query(
+                  `INSERT INTO notifications (type, text, post_id, user_id) VALUES ($1, $2, $3, $4)`,
+                  ["comment", notifText, postId, recipientId]
+                );
+              } catch (e2) {
+                await connectionPool.query(
+                  `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
+                  ["comment", notifText, postId]
+                );
+              }
+            } else {
+              console.error("Failed to create comment notification:", insertErr);
+            }
+            break;
+          }
+        }
+      }
+    } catch (notifErr) {
+      console.error("Failed to create comment notification:", notifErr);
+    }
 
     // Map content column name เพื่อให้ response สม่ำเสมอ
     const commentData = result.rows[0];
@@ -454,14 +525,50 @@ postRouter.post("/:id/like", protectUser, async (req, res) => {
       // Like - เพิ่ม like
       const insertQuery = `INSERT INTO likes (post_id, user_id) VALUES ($1, $2) RETURNING *`;
       await connectionPool.query(insertQuery, [postId, userId]);
+
+      // สร้างแจ้งเตือน like ใน notifications (ต่อกับ GET /notifications)
       try {
-        const postRow = await connectionPool.query(`SELECT title FROM posts WHERE id = $1`, [postId]);
+        const postRow = await connectionPool.query(`SELECT title, user_id AS author_id FROM posts WHERE id = $1`, [postId]);
         const postTitle = postRow.rows[0]?.title || "บทความ";
-        const likeText = `มีคนกด like บทความ '${postTitle}'`;
-        await connectionPool.query(
-          `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
-          ["like", likeText, postId]
-        );
+        const authorId = postRow.rows[0]?.author_id ?? null;
+        // ผู้รับแจ้งเตือน = ผู้เขียนบทความ (ถ้าไม่ใช่การ like ตัวเอง)
+        const recipientId = authorId && authorId !== userId ? authorId : null;
+
+        const userRow = await connectionPool.query(`SELECT name, username FROM users WHERE id = $1`, [userId]);
+        const u = userRow.rows[0];
+        const likerName = (u?.name && u.name.trim()) ? u.name.trim() : (u?.username || "Someone");
+        const likeText = `${likerName}. Liked the article '${postTitle}'`;
+
+        try {
+          if (recipientId) {
+            await connectionPool.query(
+              `INSERT INTO notifications (type, text, post_id, user_id, actor_user_id) VALUES ($1, $2, $3, $4, $5)`,
+              ["like", likeText, postId, recipientId, userId]
+            );
+          } else {
+            await connectionPool.query(
+              `INSERT INTO notifications (type, text, post_id, actor_user_id) VALUES ($1, $2, $3, $4)`,
+              ["like", likeText, postId, userId]
+            );
+          }
+        } catch (e) {
+          if (e.code === "42703") {
+            if (recipientId) {
+              await connectionPool.query(
+                `INSERT INTO notifications (type, text, post_id, user_id) VALUES ($1, $2, $3, $4)`,
+                ["like", likeText, postId, recipientId]
+              );
+            } else {
+              await connectionPool.query(
+                `INSERT INTO notifications (type, text, post_id) VALUES ($1, $2, $3)`,
+                ["like", likeText, postId]
+              );
+            }
+          } else {
+            console.error("Failed to insert like notification:", e);
+            throw e;
+          }
+        }
       } catch (notifErr) {
         console.error("Failed to create like notification:", notifErr);
       }
