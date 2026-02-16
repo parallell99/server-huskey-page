@@ -1,7 +1,6 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import serverless from "serverless-http";
 import postRouter from "./apps/postRouter.js";
 import authRouter from "./routes/auth.js";
 import protectUser from "./middleware/protectUser.mjs";
@@ -9,6 +8,13 @@ import protectAdmin from "./middleware/protectAdmin.mjs";
 import userRouter from "./apps/userRouter.js";
 import notificationRouter from "./apps/notificationRouter.js";
 import categoryRouter from "./apps/categoryRouter.js";
+import path from "path";
+import { fileURLToPath } from "url";
+import { existsSync } from "fs";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const envPath = path.resolve(__dirname, "..", ".env");
+if (existsSync(envPath)) {  dotenv.config({ path: envPath });}
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -84,11 +90,11 @@ app.get("/admin-only", protectAdmin, (req, res) => {
 //   }
 // })
 
-// For Vercel serverless: export handler (Vercel เรียก function นี้แทนการ listen)
-export default process.env.NODE_ENV === "production" ? serverless(app) : app;
+// For Vercel serverless functions
+export default app;
 
 // For local development
-if (process.env.NODE_ENV !== "production") {
+if (process.env.VERCEL !== '1') {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
